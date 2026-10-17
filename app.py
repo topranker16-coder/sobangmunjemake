@@ -1,15 +1,19 @@
 import streamlit as st
+import json
+import re
 import random
+from pypdf import PdfReader
+import google.generativeai as genai
 
 # 스마트폰 반응형 UI 설정
 st.set_page_config(
-    page_title="🎓 소방시설관리사 2차 실기 주관식 암기장",
+    page_title="🎓 소방시설관리사 2차 AI 맞춤형 암기장",
     page_icon="🔥",
     layout="centered",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-# 모바일 커스텀 CSS
+# 커스텀 CSS 스타일링
 st.markdown('''
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
@@ -35,7 +39,7 @@ st.markdown('''
         margin-bottom: 15px;
         position: relative;
     }
-    .card-badge {
+    .card-type-badge {
         position: absolute;
         top: 14px;
         left: 16px;
@@ -46,7 +50,7 @@ st.markdown('''
         padding: 4px 12px;
         border-radius: 12px;
     }
-    .card-num {
+    .card-num-badge {
         position: absolute;
         top: 14px;
         right: 16px;
@@ -55,7 +59,7 @@ st.markdown('''
         font-weight: 600;
     }
     .q-title {
-        font-size: 1.12rem;
+        font-size: 1.1rem;
         font-weight: 800;
         color: #0f172a;
         margin-top: 22px;
@@ -80,18 +84,6 @@ st.markdown('''
         white-space: pre-wrap;
         word-break: keep-all;
     }
-    .tip-box {
-        background-color: #fef2f2;
-        border-left: 4px solid #ef4444;
-        padding: 10px 12px;
-        border-radius: 6px;
-        text-align: left;
-        width: 100%;
-        color: #991b1b;
-        font-size: 0.88rem;
-        margin-top: 10px;
-        line-height: 1.5;
-    }
     div.stButton > button {
         width: 100% !important;
         border-radius: 12px !important;
@@ -102,184 +94,208 @@ st.markdown('''
 </style>
 ''', unsafe_allow_html=True)
 
-# 관리사 2차 실제 기출 엄선 주관식 문제 DB
-REAL_MANAGER_CARDS = [
-    {
-        "id": 1,
-        "subject": "점검실무행정",
-        "category": "제연설비",
-        "question": "화재예방, 소방시설 설치·유지 및 안전관리에 관한 법령상 '제연설비를 설치하여야 하는 특정소방대상물' 6가지를 기술하시오.",
-        "answer": "① 문화 및 집회시설, 종교시설, 운동시설로서 무대부의 바닥면적이 200㎡ 이상인 것 또는 영화상영관으로서 수용인원이 100명 이상인 것\n② 지하가(터널 제외)로서 연면적 1,000㎡ 이상인 것\n③ 운수시설, 복합건축물로서 연면적 5,000㎡ 이상인 것\n④ 근린생활시설, 판매시설, 업무시설, 숙박시설, 위락시설, 다중이용업소의 영업장으로서 지하층의 바닥면적 합계가 1,000㎡ 이상인 것\n⑤ 지하층을 제외한 층수가 11층 이상인 특정소방대상물\n⑥ 휴게소로서 지하층 바닥면적 합계가 1,000㎡ 이상인 것",
-        "tip": "📌 관리사 2차 단골 출제 항목으로 대상물 구분 및 바닥면적 수치(200㎡, 1,000㎡, 5,000㎡) 암기가 핵심입니다."
-    },
-    {
-        "id": 2,
-        "subject": "점검실무행정",
-        "category": "제연설비",
-        "question": "제연설비의 화재안전기술기준(NFTC 501)에 따라 제연설비 설치대상 중 배출구·공기유입구 설치 및 배출량 산정에서 이를 제외할 수 있는 장소 3가지를 기술하시오.",
-        "answer": "① 화장실·욕실·사우나·주방·창고\n② 복도·계단실 및 부속실을 제연하는 경우 당해 복도·계단실 및 부속실\n③ 사람이 거주하지 않거나 가연성 물질이 존재하지 않는 통로 및 피트 공간",
-        "tip": "📌 단서 조항 및 설치제외 장소 문제는 2차 실기 시험의 필수 암기 패턴입니다."
-    },
-    {
-        "id": 3,
-        "subject": "점검실무행정",
-        "category": "소방펌프",
-        "question": "소방시설관리사가 건물의 소방펌프를 점검한 결과 에어락(Air Lock) 현상이라고 판단하였다. 에어락 현상의 원인과 이에 대한 적절한 대책 5가지를 기술하시오.",
-        "answer": "1. 에어락(Air Lock) 원인: 펌프 흡입측 배관에 공기가 고여 펌프의 가압 송수 기능이 마비되는 현상\n2. 적절한 대책:\n① 흡입배관의 편사부관(편심 레듀샤)을 사용하여 상부 평탄 배관 형성\n② 펌프 흡입 배관을 수조 쪽으로 1/100 이상의 올림경사로 설치\n③ 물올림장치의 신속한 수위 보충 및 물올림관 공기 빼기 밸브 작동\n④ 후드밸브 기능 점검 및 이물질 제거\n⑤ 펌프 에어 빼기 밸브(Air Vent)를 개방하여 내부 공기 완전 배출",
-        "tip": "📌 점검 실무 및 고장 진단 기출 문제로 현장 대책 5가지를 명확히 기술해야 합니다."
-    },
-    {
-        "id": 4,
-        "subject": "점검실무행정",
-        "category": "자탐설비",
-        "question": "P형 수신기에 연결된 지구경종이 화재 신호 발생 시에도 작동되지 않는 경우, 그 원인 5가지를 기술하시오.",
-        "answer": "① 수신기 내 지구경종 출력 단자의 출력 전압 미발생 (수신기 기판 고장)\n② 수신기 경종 정지 스위치가 눌려진 상태 (작동 정지)\n③ 지구경종 음향장치 자체의 코일 단선 또는 구조적 고장\n④ 수신기에서 지구경종까지의 단자대 연결 배선 단선 또는 접촉 불량\n⑤ 지구경종용 퓨즈 단선 또는 예비전원 결선 불량",
-        "tip": "📌 수신기 및 경보 설비 고장 원인 분석 문제로 관리사 2차의 대표적 단답형 문제입니다."
-    },
-    {
-        "id": 5,
-        "subject": "설계 및 시공",
-        "category": "스프링클러",
-        "question": "스프링클러소화설비에서 저압건식밸브 2차측 설정압력이 낮을 경우 얻을 수 있는 장점 4가지를 기술하시오.",
-        "answer": "① 화재 발생 시 2차측 압축공기의 신속한 배출로 헤드 방수 지연시간 단축\n② 압축공기 충전을 위한 공기압축기(Compressor)의 용량 및 소모 전력 절감\n③ 배관 내 높은 공기압력으로 인한 밸브 및 배관 접속부의 누설(Leak) 위험 감소\n④ 건식밸브 오작동 시 배관 수격작용(Water Hammering) 충격 완화",
-        "tip": "📌 건식 스프링클러설비의 구조와 작동 원리를 묻는 2차 설계·시공 핵심 문제입니다."
-    },
-    {
-        "id": 6,
-        "subject": "점검실무행정",
-        "category": "종합정밀점검",
-        "question": "다중이용업소의 종합정밀점검 시 '가스누설경보기'에 대한 주요 점검항목 5가지를 기술하시오.",
-        "answer": "① 가스누설경보기의 설치 위치 및 적정성 여부 (가스 비중에 따른 높이)\n② 전원 표시등의 점등 상태 및 예비전원의 정상 작동 여부\n③ 가스 탐지부의 오염, 훼손 및 감지 기능 작동 여부\n④ 경보음량의 적정성 (1m 거리에서 70dB 이상, 주보안경종 85dB 이상)\n⑤ 차단밸브 연동 상태 및 가스 차단장치의 정상 작동 여부",
-        "tip": "📌 종합정밀점검표에 기반한 점검항목 서술 문제입니다."
-    },
-    {
-        "id": 7,
-        "subject": "점검실무행정",
-        "category": "가스계소화설비",
-        "question": "이산화탄소 소화설비의 종합정밀점검 시 '전원 및 배선'에 대한 점검항목 5가지를 기술하시오.",
-        "answer": "① 상용전원 및 예비전원의 자동 절환 작동 상태\n② 비상전원의 용량 적정성 (20분 이상 작동 자급전원)\n③ 제어반 및 수신기 간 배선의 개별 배선 및 내화·내열성 여부\n④ 감지기 회로의 도통시험 및 절연저항 상태 적정 여부\n⑤ 솔레노이드 밸브(기동장치) 기동 배선의 단선 감시 상태",
-        "tip": "📌 가스계 소화설비 전원·배선 점검항목 5가지 서술형입니다."
-    },
-    {
-        "id": 8,
-        "subject": "설계 및 시공",
-        "category": "자탐설비",
-        "question": "자동화재탐지설비의 광전식분리형감지기 설치기준 6가지를 기술하시오.",
-        "answer": "① 감지기와 광원축은 벽면으로부터 0.6m 이상 떨어진 위치에 설치할 것\n② 감지기의 광원축 높이는 천장 등 높이의 80% 이상일 것\n③ 감지기의 광원축 길이는 공칭감시거리 범위 이내일 것\n④ 송광부와 수광부는 뒷벽으로부터 1m 이내 위치에 설치할 것\n⑤ 광원축에 햇빛이 직접 비치지 아니하는 장소에 설치할 것\n⑥ 송광부와 수광부는 설치 벽면에 견고하게 고정할 것",
-        "tip": "📌 감지기 세부 설치기준 6가지를 묻는 관리사 2차 서술 기출입니다."
-    }
-]
+# --- 사이드바 AI 설정 ---
+st.sidebar.title("🤖 AI 샤프 문제 생성 설정")
+st.sidebar.caption("Google AI Studio에서 무료 Gemini API Key를 발급받아 입력하시면, 최신 법령/기술기준 PDF를 넣었을 때 AI가 샤프하게 관리사 2차 문제를 자동 추출합니다!")
 
-# 세션 상태 관리
+api_key = st.sidebar.text_input("Gemini API Key 입력:", type="password")
+
+if api_key:
+    st.sidebar.success("⚡ AI 엔진 활성화 완료!")
+else:
+    st.sidebar.info("💡 API Key가 없으면 기본 규칙 파서가 작동합니다.")
+
+# AI 문제 생성 함수 (Gemini API 기반)
+def generate_cards_with_ai(text_content, key):
+    try:
+        genai.configure(api_key=key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        prompt = f"""
+        너는 대한민국 소방시설관리사 2차 실기시험(점검실무행정, 설계및시공) 전문 출제위원이다.
+        아래 제공된 [화재안전기술기준/소방법령 텍스트]를 정밀 분석하여, 실제 2차 주관식 시험 스타일에 맞는 암기 문제와 모범답안 목록을 JSON 형식으로 작성해라.
+
+        [출제 지침]:
+        1. 단순 숫자 뚫기나 부칙 시행일 같은 무의미한 문장은 절대 제외한다.
+        2. 주요 출제 유형:
+           - 유형 1: 세부 설치기준/점검항목 N가지 서술
+           - 유형 2: 단서 조항(다만, 제외, 면제) 서술
+           - 유형 3: 핵심 수치 및 기준 단답 서술
+        3. 답안은 실제 시험에서 채점하기 용이하도록 '①, ②, ③' 번호목차 형태로 명확하고 깔끔하게 작성한다.
+        4. 결과는 반드시 아래 JSON 배열 포맷으로만 응답해라 (다른 설명 금지):
+
+        [
+          {{
+            "type": "🔥 [관리사 2차] 세부 설치기준 서술",
+            "question": "질문 내용...",
+            "answer": "① 모범답안 1\n② 모범답안 2..."
+          }}
+        ]
+
+        [화재안전기술기준/소방법령 텍스트]:
+        {text_content[:6000]}
+        """
+        
+        response = model.generate_content(prompt)
+        res_text = response.text
+        
+        # JSON 추출
+        json_match = re.search(r'\\[.*\\]', res_text, re.DOTALL)
+        if json_match:
+            cards = json.loads(json_match.group(0))
+            return cards
+        else:
+            st.error("AI 응답을 JSON으로 해석하지 못했습니다. 다시 시도해주세요.")
+            return None
+    except Exception as e:
+        st.error(f"AI 문제 생성 중 오류가 발생했습니다: {e}")
+        return None
+
+# 일반 규칙 기반 백업 파서
+def parse_fallback_cards(raw_text):
+    cards = []
+    lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
+    
+    current_title = "화재안전기술기준 핵심 조문"
+    body_acc = []
+    
+    for line in lines:
+        if any(line.startswith(p) for p in ["제", "1.", "2.", "3.", "4.", "5.", "①", "②", "③"]):
+            if body_acc and len(body_acc) >= 2:
+                cards.append({
+                    "type": "🔥 [관리사 2차] 세부 기준 서술",
+                    "question": f"다음 **[{current_title}]**의 세부 기준을 기술하시오.",
+                    "answer": "\n".join(body_acc)
+                })
+            current_title = line
+            body_acc = []
+        else:
+            body_acc.append(f"• {line}")
+            
+    if body_acc and len(body_acc) >= 2:
+        cards.append({
+            "type": "🔥 [관리사 2차] 세부 기준 서술",
+            "question": f"다음 **[{current_title}]**의 세부 기준을 기술하시오.",
+            "answer": "\n".join(body_acc)
+        })
+        
+    return cards if cards else [{
+        "type": "🎯 [관리사 2차] 주요 조문 암기",
+        "question": "입력된 조문의 주요 내용을 기술하시오.",
+        "answer": raw_text[:300]
+    }]
+
+st.title("🎓 소방시설관리사 2차 AI 스마트 암기장")
+st.caption("📜 최신 화재안전기술기준(NFTC) PDF/텍스트를 입력하시면 AI가 샤프하게 관리사 2차 주관식 문제를 자동 생성합니다!")
+
+tab_input, tab_cards = st.tabs(["📥 1. 최신 법령/PDF 입력", "🎴 2. AI 샤프 암기카드"])
+
+with tab_input:
+    st.subheader("📄 1) 최신 화재안전기준 PDF 업로드")
+    uploaded_pdf = st.file_uploader("개정된 NFTC / 법령 PDF 파일:", type=["pdf"])
+    
+    pdf_text = ""
+    if uploaded_pdf is not None:
+        try:
+            reader = PdfReader(uploaded_pdf)
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    pdf_text += extracted + "\n"
+            st.success(f"✅ PDF 분석 완료! (총 {len(reader.pages)}페이지 텍스트 추출)")
+        except Exception as e:
+            st.error(f"❌ PDF 처리 오류: {e}")
+
+    st.write("---")
+    st.subheader("📝 2) 조문 텍스트 직접 입력 / 수정")
+    input_text = st.text_area("암기할 조문 내용을 입력하세요:", value=pdf_text, height=220, placeholder="최신 법령 조문을 복사해서 붙여넣으세요...")
+        
+    if st.button("🚀 AI 샤프 문제 생성 시작하기", type="primary"):
+        if not input_text.strip():
+            st.warning("⚠️ 암기할 텍스트를 입력하거나 PDF를 업로드해 주세요!")
+        else:
+            with st.spinner("🤖 AI가 최신 법령 맥락을 분석하여 샤프한 관리사 2차 문제를 생성 중입니다..."):
+                if api_key:
+                    cards = generate_cards_with_ai(input_text, api_key)
+                else:
+                    cards = parse_fallback_cards(input_text)
+                    st.info("💡 Gemini API Key를 입력하시면 AI가 훨씬 정교하게 문제를 생성합니다.")
+                
+                if cards:
+                    st.session_state.ai_generated_cards = cards
+                    st.session_state.card_idx = 0
+                    st.session_state.is_flipped = False
+                    st.session_state.known_set = set()
+                    st.success(f"✨ 샤프한 관리사 2차 문제 {len(cards)}개가 성공적으로 생성되었습니다!")
+
+cards = st.session_state.get("ai_generated_cards", [])
+
 if "card_idx" not in st.session_state:
     st.session_state.card_idx = 0
 if "is_flipped" not in st.session_state:
     st.session_state.is_flipped = False
 if "known_set" not in st.session_state:
     st.session_state.known_set = set()
-if "selected_subject" not in st.session_state:
-    st.session_state.selected_subject = "전체보기"
 
-st.title("🎓 소방시설관리사 2차 실기 주관식 암기장")
-st.caption("🔥 기출 소스 분석 기반 100% 실전 2차 주관식 서술형·단답형 모범답안 암기 앱")
-
-tab_app, tab_custom = st.tabs(["🎴 관리사 2차 기출 암기장", "➕ 사용자 정의 조문 입력"])
-
-with tab_app:
-    subjects = ["전체보기", "점검실무행정", "설계 및 시공"]
-    subj_choice = st.selectbox("📚 과목 선택:", subjects, index=subjects.index(st.session_state.selected_subject))
-    
-    if subj_choice != st.session_state.selected_subject:
-        st.session_state.selected_subject = subj_choice
-        st.session_state.card_idx = 0
-        st.session_state.is_flipped = False
-        st.rerun()
-
-    active_cards = REAL_MANAGER_CARDS if subj_choice == "전체보기" else [c for c in REAL_MANAGER_CARDS if c["subject"] == subj_choice]
-    
-    total_c = len(active_cards)
-    curr_idx = st.session_state.card_idx % total_c
-    curr_card = active_cards[curr_idx]
-
-    # 진도율
-    known_cnt = len([c for c in active_cards if c["id"] in st.session_state.known_set])
-    prog_val = min(1.0, known_cnt / total_c)
-    st.progress(prog_val)
-    st.caption(f"📊 암기 진도율: {total_c}개 중 {known_cnt}개 암기 완료 ({int(prog_val*100)}%)")
-
-    # 카드 표시
-    if not st.session_state.is_flipped:
-        st.markdown(f'''
-        <div class="flashcard-box">
-            <div class="card-badge">[{curr_card['subject']}] {curr_card['category']}</div>
-            <div class="card-num">{curr_idx + 1} / {total_c}</div>
-            <div class="q-title"><b>Q.</b> {curr_card['question']}</div>
-            <div style="color: #94a3b8; font-size: 0.82rem; margin-top: 15px;">👆 아래 [🔄 답안 및 해설 보기]를 누르세요</div>
-        </div>
-        ''', unsafe_allow_html=True)
+with tab_cards:
+    if not cards:
+        st.info("👈 [📥 1. 최신 법령/PDF 입력] 탭에서 최신 기준을 넣고 [🚀 AI 샤프 문제 생성 시작하기] 버튼을 눌러주세요.")
     else:
-        st.markdown(f'''
-        <div class="flashcard-box" style="border-color: #10b981; background: #ffffff;">
-            <div class="card-badge" style="background-color: #10b981;">모범답안 & 핵심 요약</div>
-            <div class="card-num">{curr_idx + 1} / {total_c}</div>
-            <div class="a-box"><b>[모범 답안]:</b>\n{curr_card['answer']}</div>
-            <div class="tip-box">{curr_card['tip']}</div>
-        </div>
-        ''', unsafe_allow_html=True)
+        total_c = len(cards)
+        curr_idx = st.session_state.card_idx % total_c
+        curr_card = cards[curr_idx]
 
-    col_flip, col_know = st.columns(2)
-    with col_flip:
-        if st.button("🔄 답안 및 해설 보기", type="primary"):
-            st.session_state.is_flipped = not st.session_state.is_flipped
-            st.rerun()
-    with col_know:
-        is_k = curr_card['id'] in st.session_state.known_set
-        if st.button("👍 암기완료!" if is_k else "👍 암기했어요"):
-            if is_k:
-                st.session_state.known_set.remove(curr_card['id'])
-            else:
-                st.session_state.known_set.add(curr_card['id'])
-            st.rerun()
+        known_cnt = len(st.session_state.known_set)
+        prog_val = min(1.0, known_cnt / total_c)
+        st.progress(prog_val)
+        st.caption(f"📊 암기 진도율: {total_c}개 중 {known_cnt}개 암기 완료 ({int(prog_val*100)}%)")
 
-    st.write("")
-    col_prev, col_rand, col_next = st.columns(3)
-    with col_prev:
-        if st.button("👈 이전"):
-            st.session_state.card_idx = (st.session_state.card_idx - 1) % total_c
-            st.session_state.is_flipped = False
-            st.rerun()
-    with col_rand:
-        if st.button("🎲 섞기"):
-            st.session_state.card_idx = random.randint(0, total_c - 1)
-            st.session_state.is_flipped = False
-            st.rerun()
-    with col_next:
-        if st.button("👉 다음"):
-            st.session_state.card_idx = (st.session_state.card_idx + 1) % total_c
-            st.session_state.is_flipped = False
-            st.rerun()
-
-with tab_custom:
-    st.subheader("➕ 나만의 2차 주관식 암기 카드 추가하기")
-    st.caption("질문과 모범답안을 직접 입력하여 정밀 암기 카드를 추가할 수 있습니다.")
-    
-    c_subj = st.selectbox("과목:", ["점검실무행정", "설계 및 시공"])
-    c_cat = st.text_input("설비 카테고리 (예: 제연설비, 수신기):", "화재안전기술기준")
-    c_q = st.text_area("주관식 질문 (Q):", placeholder="예: 자동화재탐지설비의 경계구역 설정기준 3가지를 기술하시오.")
-    c_a = st.text_area("모범 답안 (A):", placeholder="① 하나의 경계구역 면적은 600㎡ 이하...\n② 한 변의 길이는 50m 이하...")
-    c_tip = st.text_input("출제 팁 / 메모:", "📌 핵심 수치 및 요건 숙지")
-    
-    if st.button("✨ 카드로 추가하기"):
-        if c_q.strip() and c_a.strip():
-            new_card = {
-                "id": len(REAL_MANAGER_CARDS) + 1,
-                "subject": c_subj,
-                "category": c_cat,
-                "question": c_q,
-                "answer": c_a,
-                "tip": c_tip
-            }
-            REAL_MANAGER_CARDS.append(new_card)
-            st.success("🎉 새로운 주관식 암기카드가 정상 등록되었습니다!")
+        if not st.session_state.is_flipped:
+            st.markdown(f'''
+            <div class="flashcard-box">
+                <div class="card-type-badge">{curr_card.get('type', '관리사 2차')}</div>
+                <div class="card-num-badge">{curr_idx + 1} / {total_c}</div>
+                <div class="q-title"><b>Q.</b> {curr_card.get('question', '')}</div>
+                <div style="color: #94a3b8; font-size: 0.82rem; margin-top: 15px;">👆 아래 [🔄 모범답안 보기] 버튼을 누르세요</div>
+            </div>
+            ''', unsafe_allow_html=True)
         else:
-            st.warning("⚠️ 질문과 답안을 모두 입력해 주세요.")
+            st.markdown(f'''
+            <div class="flashcard-box" style="border-color: #10b981; background: #ffffff;">
+                <div class="card-type-badge" style="background-color: #10b981;">AI 모범답안</div>
+                <div class="card-num-badge">{curr_idx + 1} / {total_c}</div>
+                <div class="a-box"><b>[모범 답안]:</b>\n{curr_card.get('answer', '')}</div>
+            </div>
+            ''', unsafe_allow_html=True)
+
+        col_flip, col_know = st.columns(2)
+        with col_flip:
+            if st.button("🔄 모범답안 보기", type="primary"):
+                st.session_state.is_flipped = not st.session_state.is_flipped
+                st.rerun()
+        with col_know:
+            is_k = curr_idx in st.session_state.known_set
+            if st.button("👍 암기완료!" if is_k else "👍 암기했어요"):
+                if is_k:
+                    st.session_state.known_set.remove(curr_idx)
+                else:
+                    st.session_state.known_set.add(curr_idx)
+                st.rerun()
+
+        st.write("")
+        col_prev, col_rand, col_next = st.columns(3)
+        with col_prev:
+            if st.button("👈 이전"):
+                st.session_state.card_idx = (st.session_state.card_idx - 1) % total_c
+                st.session_state.is_flipped = False
+                st.rerun()
+        with col_rand:
+            if st.button("🎲 섞기"):
+                st.session_state.card_idx = random.randint(0, total_c - 1)
+                st.session_state.is_flipped = False
+                st.rerun()
+        with col_next:
+            if st.button("👉 다음"):
+                st.session_state.card_idx = (st.session_state.card_idx + 1) % total_c
+                st.session_state.is_flipped = False
+                st.rerun()
