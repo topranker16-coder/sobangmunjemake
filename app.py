@@ -57,7 +57,7 @@ st.markdown('''
         font-weight: 600;
     }
     .q-title {
-        font-size: 1.15rem;
+        font-size: 1.12rem;
         font-weight: 800;
         color: #0f172a;
         margin-top: 18px;
@@ -91,54 +91,54 @@ st.markdown('''
 </style>
 ''', unsafe_allow_html=True)
 
-# 관리사 2차 기출문제 파싱 및 자동 생성 알고리즘
+# 관리사 2차 기출 패턴 파싱 및 카드 생성 함수
 def parse_manager_exam_cards(raw_text):
     cards = []
-    # 단락 및 조문 분할
-    blocks = [b.strip() for b in re.split(r'\n(?=\d+\.|\\([5-13]\\)|[①-⑩]|제\d+조)', raw_text) if b.strip()]
+    # 문단 및 조문 단위 분할
+    blocks = [b.strip() for b in re.split(r'\n(?=\d+\.|[①-⑩]|제\d+조)', raw_text) if b.strip()]
     
     for block in blocks:
         lines = [l.strip() for l in block.split('\n') if l.strip()]
         if not lines:
             continue
             
-        header = lines
+        header = lines[0]
         body_items = lines[1:] if len(lines) > 1 else []
         item_count = len(body_items)
         
-        # 1. 예외 / 면제 / 제외 기준 유형 (다만, ~의 경우 제외)
-        if "다만" in block or "제외" in block or "면제" in block:
-            match_except = re.findall(r'(다만[^\.\n]+|제외[^\.\n]+|면제[^\.\n]+)', block)
+        # 1. 예외 / 면제 / 제외 기준 유형 (단서 조항)
+        if any(kw in block for kw in ["다만", "제외", "면제"]):
+            match_except = re.findall(r'([^.\n]*(?:다만|제외|면제)[^.\n]*)', block)
             if match_except:
                 cards.append({
                     "type": "📝 [관리사 2차] 설치제외 / 면제기준",
-                    "question": f"다음 화재안전기술기준(NFTC) 관련 조문에서 **[설치제외 및 면제(단서) 기준]**을 기술하시오.\n\n📌 **대상 조문:** {header}",
-                    "answer": "\n".join(match_except),
+                    "question": f"다음 화재안전기술기준(NFTC) 조문에서 **[설치제외 및 면제(단서) 기준]**을 서술하시오.\n\n📌 **대상 조문:** {header}",
+                    "answer": "\n".join([f"• {m.strip()}" for m in match_except]),
                     "original": block
                 })
                 
-        # 2. 설치기준 / 점검항목 서술 유형 (세부 항/호가 나열된 경우)
+        # 2. 설치기준 / 점검항목 서술 유형 (세부 항/호 나열)
         if item_count >= 2:
             cards.append({
-                "type": "🔥 [관리사 2차] 설치기준 / 세부요건 서술",
-                "question": f"다음 소방설비 관련 **[{header}]**에 대한 세부 설치기준({item_count}가지)을 기술하시오.",
+                "type": "🔥 [관리사 2차] 세부 설치기준 서술",
+                "question": f"소방설비 관련 **[{header}]**에 대한 세부 설치기준({item_count}가지)을 서술하시오.",
                 "answer": "\n".join(body_items),
                 "original": block
             })
             
-        # 3. 수치 및 규격 핵심 요약 유형 (면적, 거리, 높이, 데시벨 등)
-        num_matches = re.findall(r'([^\.\n]*?\d+(?:\.\d+)?\s*(?:제곱미터|미터|데시벨|m|㎡|분|초|층|개|℃|kW|MPa|L/min)[^\.\n]*)', block)
+        # 3. 핵심 수치 및 규격 단답 유형
+        num_matches = re.findall(r'([^.\n]*?\d+(?:\.\d+)?\s*(?:제곱미터|미터|데시벨|m|㎡|분|초|층|개|℃|kW|MPa|L/min)[^.\n]*)', block)
         if num_matches and item_count < 2:
             cards.append({
-                "type": "🎯 [관리사 2차] 수치 및 기준 단답 암기",
-                "question": f"다음 조문의 **[핵심 수치 및 수량 기준]**을 서술하시오.\n\n📌 **조문:** {header}",
+                "type": "🎯 [관리사 2차] 핵심 수치/단답 암기",
+                "question": f"다음 조문의 **[주요 수치 및 수량 기준]**을 서술하시오.\n\n📌 **조문:** {header}",
                 "answer": "\n".join([f"• {m.strip()}" for m in num_matches]),
                 "original": block
             })
             
     return cards
 
-# 기본 예시 화재안전기술기준 (자동화재탐지설비)
+# 샘플 화재안전기술기준 조문 (자동화재탐지설비)
 SAMPLE_NFTC = """1. 자동화재탐지설비의 경계구역 설정기준
 ① 하나의 경계구역의 면적은 600제곱미터 이하로 하고 한 변의 길이는 50미터 이하로 할 것.
 ② 해당 특정소방대상물의 출입구에서 그 내부 전체가 보이는 것에 있어서는 한 변의 길이가 50미터 범위 내에서 1,000제곱미터 이하로 할 수 있다.
@@ -157,7 +157,7 @@ SAMPLE_NFTC = """1. 자동화재탐지설비의 경계구역 설정기준
 st.title("🎓 소방시설관리사 2차 실전 암기카드 생성기")
 st.caption("📜 화재안전기술기준(NFTC) PDF/텍스트를 입력하시면 실제 관리사 2차 기출문제 형식으로 암기 카드를 자동 생성합니다!")
 
-tab_input, tab_cards = st.tabs(["📥 1. PDF / 텍스트 입력", "🎴 2. 관리사 2차 암기카드"])
+tab_input, tab_cards, tab_quiz = st.tabs(["📥 1. PDF / 텍스트 입력", "🎴 2. 관리사 2차 암기카드", "📝 3. 실전 퀴즈 테스트"])
 
 with tab_input:
     st.subheader("📄 1) 화재안전기준 PDF 업로드")
@@ -266,3 +266,24 @@ with tab_cards:
                 st.session_state.card_idx = (st.session_state.card_idx + 1) % total_c
                 st.session_state.is_flipped = False
                 st.rerun()
+
+with tab_quiz:
+    if not cards:
+        st.info("👈 먼저 [📥 1. PDF / 텍스트 입력] 탭에서 내용을 입력해 주세요.")
+    else:
+        st.subheader("📝 생성된 카드로 주관식 연습")
+        quiz_idx = st.session_state.get("quiz_idx", 0) % len(cards)
+        q_card = cards[quiz_idx]
+        
+        st.markdown(f"**[문제 {quiz_idx + 1}]** {q_card['type']}")
+        st.info(q_card['question'])
+        
+        user_ans = st.text_area("내가 생각하는 답안을 직접 작성해 보세요:", key=f"user_ans_{quiz_idx}", height=120)
+        
+        if st.button("🎯 모범답안 확인하기"):
+            st.success(f"**[모범 답안]:**\n{q_card['answer']}")
+            st.caption(f"**[원문 조문]:** {q_card['original']}")
+            
+        if st.button("➡️ 다음 문제 풀기"):
+            st.session_state.quiz_idx = quiz_idx + 1
+            st.rerun()
