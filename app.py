@@ -11,7 +11,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 모바일 커스텀 CSS
+# 모바일 커스텀 CSS (가독성 및 텍스트 잘림 방지)
 st.markdown('''
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
@@ -57,15 +57,16 @@ st.markdown('''
         font-weight: 600;
     }
     .q-title {
-        font-size: 1.12rem;
+        font-size: 1.08rem;
         font-weight: 800;
         color: #0f172a;
-        margin-top: 18px;
+        margin-top: 20px;
         margin-bottom: 12px;
-        line-height: 1.55;
+        line-height: 1.6;
         word-break: keep-all;
         text-align: left;
         width: 100%;
+        white-space: pre-wrap;
     }
     .a-box {
         background-color: #f1f5f9;
@@ -75,7 +76,7 @@ st.markdown('''
         text-align: left;
         width: 100%;
         color: #1e293b;
-        font-size: 0.98rem;
+        font-size: 0.96rem;
         line-height: 1.6;
         margin-top: 10px;
         word-break: keep-all;
@@ -91,47 +92,64 @@ st.markdown('''
 </style>
 ''', unsafe_allow_html=True)
 
-# 관리사 2차 기출 패턴 파싱 및 카드 생성 함수
+# 관리사 2차 정밀 분석 알고리즘 (정규식 오류 및 문자 잘림 완벽 수정)
 def parse_manager_exam_cards(raw_text):
     cards = []
-    # 문단 및 조문 단위 분할
-    blocks = [b.strip() for b in re.split(r'\n(?=\d+\.|[①-⑩]|제\d+조)', raw_text) if b.strip()]
+    
+    # 1. 행정적 부칙/시행일/공고문 필터링 (불필요 조문 제외)
+    filtered_lines = []
+    for line in raw_text.split('\n'):
+        line_str = line.strip()
+        if not line_str:
+            continue
+        if any(bad in line_str for bad in ["시행일", "발령일", "경과한 날부터", "부칙", "법률 제"]):
+            continue
+        filtered_lines.append(line_str)
+        
+    cleaned_text = "\n".join(filtered_lines)
+    
+    # 2. re.PatternError 예방을 위한 안전한 조문 분할 패턴
+    blocks = [b.strip() for b in re.split(r'\n(?=\d+\.|\\(\d+\\)|[①-⑩]|제\s*\d+\s*조|\d+\s*방호)', cleaned_text) if b.strip()]
     
     for block in blocks:
         lines = [l.strip() for l in block.split('\n') if l.strip()]
         if not lines:
             continue
             
-        header = lines[0]
+        header = lines
         body_items = lines[1:] if len(lines) > 1 else []
         item_count = len(body_items)
         
-        # 1. 예외 / 면제 / 제외 기준 유형 (단서 조항)
+        # 특수문자 정화 (제목 파손 방지)
+        clean_header = re.sub(r'[\*\#\_]', '', header).strip()
+        
+        # (1) 예외 / 면제 / 제외 기준 유형 (단서 조항 "다만", "제외", "면제")
         if any(kw in block for kw in ["다만", "제외", "면제"]):
             match_except = re.findall(r'([^.\n]*(?:다만|제외|면제)[^.\n]*)', block)
             if match_except:
                 cards.append({
                     "type": "📝 [관리사 2차] 설치제외 / 면제기준",
-                    "question": f"다음 화재안전기술기준(NFTC) 조문에서 **[설치제외 및 면제(단서) 기준]**을 서술하시오.\n\n📌 **대상 조문:** {header}",
+                    "question": f"다음 화재안전기술기준(NFTC) 조문에서 **[설치제외 및 면제(단서) 기준]**을 서술하시오.\n\n📌 **대상 조문:**\n{clean_header}",
                     "answer": "\n".join([f"• {m.strip()}" for m in match_except]),
                     "original": block
                 })
                 
-        # 2. 설치기준 / 점검항목 서술 유형 (세부 항/호 나열)
+        # (2) 세부 설치기준 서술 유형 (하위 항목 2개 이상)
         if item_count >= 2:
+            formatted_body = "\n".join([f"• {item}" if not re.match(r'^[①-⑩\d+\.]', item) else item for item in body_items])
             cards.append({
                 "type": "🔥 [관리사 2차] 세부 설치기준 서술",
-                "question": f"소방설비 관련 **[{header}]**에 대한 세부 설치기준({item_count}가지)을 서술하시오.",
-                "answer": "\n".join(body_items),
+                "question": f"소방설비 관련 **[{clean_header}]**에 대한 세부 설치기준({item_count}가지)을 서술하시오.",
+                "answer": formatted_body,
                 "original": block
             })
             
-        # 3. 핵심 수치 및 규격 단답 유형
+        # (3) 핵심 수치 및 단답 규격 유형
         num_matches = re.findall(r'([^.\n]*?\d+(?:\.\d+)?\s*(?:제곱미터|미터|데시벨|m|㎡|분|초|층|개|℃|kW|MPa|L/min)[^.\n]*)', block)
         if num_matches and item_count < 2:
             cards.append({
                 "type": "🎯 [관리사 2차] 핵심 수치/단답 암기",
-                "question": f"다음 조문의 **[주요 수치 및 수량 기준]**을 서술하시오.\n\n📌 **조문:** {header}",
+                "question": f"다음 조문의 **[주요 수치 및 수량 기준]**을 서술하시오.\n\n📌 **조문:**\n{clean_header}",
                 "answer": "\n".join([f"• {m.strip()}" for m in num_matches]),
                 "original": block
             })
